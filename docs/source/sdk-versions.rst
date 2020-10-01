@@ -43,9 +43,39 @@ The Cozmo SDK is updated often in order to provide you with the best possible us
 +---------------+---------------+
 | 2.1.0         | 1.2.1         |
 +---------------+---------------+
+| 2.2.0         | 1.3.0         |
++---------------+---------------+
+| 2.3.0         | 1.3.1         |
++---------------+---------------+
+| 2.4.0         | 1.3.2         |
++---------------+---------------+
+| 2.5.0         | 1.4.0         |
++---------------+---------------+
+| 2.6.0         | 1.4.1         |
++---------------+---------------+
+| 2.7.0         | 1.4.2         |
++---------------+---------------+
+| 2.8.0         | 1.4.3         |
++---------------+---------------+
+| 2.9.0         | 1.4.4         |
++---------------+---------------+
+| 2.10.0        | 1.4.5         |
++---------------+---------------+
+| 3.0.1         | 1.4.6         |
++---------------+---------------+
+| 3.1.0         | 1.4.7         |
++---------------+---------------+
+| 3.2.0         | 1.4.8         |
++---------------+---------------+
+| 3.3.0         | 1.4.9         |
++---------------+---------------+
+| 3.4.0         | 1.4.10        |
++---------------+---------------+
 
 If you have incompatible versions of the app and the SDK, please update the app and SDK.
 
 ----
 
-`Click here to return to the Cozmo Developer website. <http://developer.anki.com>`_
+`Terms and Conditions <https://www.anki.com/en-us/company/terms-and-conditions>`_ and `Privacy Policy <https://www.anki.com/en-us/company/privacy>`_
+
+`Click here to return to the Anki Developer website. <http://developer.anki.com>`_

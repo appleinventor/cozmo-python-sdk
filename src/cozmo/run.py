@@ -30,7 +30,7 @@ a 3d viewer (with optional 2nd window showing Cozmo's camera) (using OpenGL), if
 supported on your system.
 
 Finally, more advanced progarms can integrate the SDK with an existing event
-loop by using the :func:`connect_with_loop` function.
+loop by using the :func:`connect_on_loop` function.
 
 All of these functions make use of a :class:`DeviceConnector` subclass to
 deal with actually connecting to an Android or iOS device.  There shouldn't
@@ -673,7 +673,7 @@ def connect_with_3dviewer(f, conn_factory=conn.CozmoConnection, connector=None,
                                       % opengl)
         else:
             raise NotImplementedError('opengl is not available; '
-                'make sure the PyOpenGL, PyOpenGL-accelerate and Pillow packages are installed:\n'
+                'make sure the PyOpenGL and Pillow packages are installed:\n'
                 'Do `pip3 install --user cozmo[3dviewer]` to install. Error: %s' % opengl)
 
     viewer = opengl.OpenGLViewer(enable_camera_view=enable_camera_view, show_viewer_controls=show_viewer_controls)

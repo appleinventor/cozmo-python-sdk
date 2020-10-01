@@ -59,6 +59,7 @@ from . import logger, logger_protocol
 from . import action
 from . import anim
 from . import audio
+from . import song
 from . import behavior
 from . import camera
 from . import conn
@@ -524,18 +525,38 @@ class TurnInPlace(action.Action):
 
     Returned by :meth:`~cozmo.robot.Robot.turn_in_place`
     '''
-    def __init__(self, angle, **kw):
+    def __init__(self, angle, speed, accel, angle_tolerance, is_absolute, **kw):
         super().__init__(**kw)
-        # :class:`cozmo.util.Angle`: The angle to turn
+        #: :class:`cozmo.util.Angle`: The angle to turn
         self.angle = angle
+        #: :class:`cozmo.util.Angle`: Angular turn speed (per second).
+        self.speed = speed
+        #: :class:`cozmo.util.Angle`: Acceleration of angular turn (per second squared).
+        self.accel = accel
+        #: :class:`cozmo.util.Angle`: The minimum angular tolerance to consider
+        #: the action complete (this is clamped to a minimum of 2 degrees internally).
+        self.angle_tolerance = angle_tolerance
+        #: bool: True to turn to a specific angle, False to turn relative to the current pose.
+        self.is_absolute = is_absolute
 
     def _repr_values(self):
-        return "angle=%s" % (self.angle,)
+        return "angle=%s, speed=%s, accel=%s, tolerance=%s is_absolute=%s" %\
+               (self.angle, self.speed, self.accel, self.angle_tolerance, self.is_absolute)
+
+    def _get_radians(self, in_angle, default_value=0.0):
+        # Helper method to allow None angles to represent default values
+        if in_angle is None:
+            return default_value
+        else:
+            return in_angle.radians
 
     def _encode(self):
         return _clad_to_engine_iface.TurnInPlace(
             angle_rad = self.angle.radians,
-            isAbsolute = 0)
+            speed_rad_per_sec = self._get_radians(self.speed),
+            accel_rad_per_sec2 = self._get_radians(self.accel),
+            tol_rad = self._get_radians(self.angle_tolerance),
+            isAbsolute = int(self.is_absolute))
 
 
 class PopAWheelie(action.Action):
@@ -891,6 +912,16 @@ class Robot(event.Dispatcher):
         See :class:`cozmo.anim.Triggers` for available animation triggers.
         '''
         return self.conn.anim_names
+
+    @property
+    def anim_triggers(self):
+        '''list of :class:`cozmo.anim.Triggers`, specifying available animation triggers
+
+        These can be sent to the play_anim_trigger to make the robot perform animations.
+
+        An alias of :attr:`cozmo.anim.Triggers.trigger_list`.
+        '''
+        return anim.Triggers.trigger_list
 
     @property
     def pose(self):
@@ -1546,7 +1577,56 @@ class Robot(event.Dispatcher):
 
     ## Animation Commands ##
 
-    def play_anim(self, name, loop_count=1, in_parallel=False, num_retries=0):
+    def play_audio(self, audio_event):
+        '''Sends an audio event to the engine
+
+        Most of these come in pairs, with one to start an audio effect, and one to stop
+        if desired.
+
+        Example: 
+            :attr:`cozmo.audio.AudioEvents.SfxSharedSuccess` starts a sound
+            :attr:`cozmo.audio.AudioEvents.SfxSharedSuccessStop` interrupts that sound in progress
+
+        Some events are part of the TinyOrchestra system which have special behavior.  
+        This system can be intitialized and stopped, and various musical instruments can be 
+        turned on and off while it is running.
+
+        Args:
+            audio_event (object): An attribute of the :class:`cozmo.audio.AudioEvents` class
+        '''
+        audio_event_id = audio_event.id
+        game_object_id = _clad_to_engine_anki.AudioMetaData.GameObjectType.CodeLab
+
+        msg = _clad_to_engine_anki.AudioEngine.Multiplexer.PostAudioEvent(
+            audioEvent=audio_event_id, gameObject=game_object_id)
+        self.conn.send_msg(msg)
+
+    def play_song(self, song_notes, loop_count=1, in_parallel=False, num_retries=0):
+        '''Starts playing song on the robot.
+
+        Plays a provided array of SongNotes using a custom animation on the robot.
+
+        Args:
+            song_notes (object[]): An array of :class:`cozmo.song.SongNote` classes
+
+        Returns:
+            A :class:`cozmo.anim.Animation` action object which can be queried
+                to see when it is complete.
+        '''
+
+        msg = _clad_to_engine_iface.ReplaceNotesInSong(notes=song_notes)
+        self.conn.send_msg(msg)
+
+        song_animation_name = 'cozmo_sings_custom'
+        action = self.animation_factory(song_animation_name, loop_count,
+                conn=self.conn, robot=self, dispatch_parent=self)
+        self._action_dispatcher._send_single_action(action,
+                                                    in_parallel=in_parallel,
+                                                    num_retries=num_retries)
+        return action
+
+    def play_anim(self, name, loop_count=1, in_parallel=False, num_retries=0,
+                  ignore_body_track=False, ignore_head_track=False, ignore_lift_track=False):
         '''Starts an animation playing on a robot.
 
         Returns an Animation object as soon as the request to play the animation
@@ -1566,6 +1646,12 @@ class Robot(event.Dispatcher):
                 be already complete.
             num_retries (int): Number of times to retry the action if the
                 previous attempt(s) failed.
+            ignore_body_track (bool): True to ignore the animation track for
+                Cozmo's body (i.e. the wheels / treads).
+            ignore_head_track (bool): True to ignore the animation track for
+                Cozmo's head.
+            ignore_lift_track (bool): True to ignore the animation track for
+                Cozmo's lift.
         Returns:
             A :class:`cozmo.anim.Animation` action object which can be queried
                 to see when it is complete.
@@ -1575,27 +1661,12 @@ class Robot(event.Dispatcher):
         if name not in self.conn.anim_names:
             raise ValueError('Unknown animation name "%s"' % name)
         action = self.animation_factory(name, loop_count,
+                ignore_body_track, ignore_head_track, ignore_lift_track,
                 conn=self.conn, robot=self, dispatch_parent=self)
         self._action_dispatcher._send_single_action(action,
                                                     in_parallel=in_parallel,
                                                     num_retries=num_retries)
         return action
-
-    def play_audio(self, audio_event):
-        '''Starts playing audio on the device.
-
-        Sends an audio event to the engine using the id specified by the 
-        supplied audio_event.
-
-        Args:
-            audio_event (object): An attribute of the :class:`cozmo.audio.AudioEvents` class
-        '''
-        audio_event_id = audio_event.id
-        game_object_id = _clad_to_engine_anki.AudioMetaData.GameObjectType.CodeLab
-
-        msg = _clad_to_engine_anki.AudioEngine.Multiplexer.PostAudioEvent(
-            audioEvent=audio_event_id, gameObject=game_object_id)
-        self.conn.send_msg(msg)
 
     def play_anim_trigger(self, trigger, loop_count=1, in_parallel=False,
                           num_retries=0, use_lift_safe=False, ignore_body_track=False,
@@ -1952,6 +2023,7 @@ class Robot(event.Dispatcher):
 
         Args:
             target_object (:class:`cozmo.objects.ObservableObject`): The destination object.
+                CustomObject instances are not supported.            
             distance_from_object (:class:`cozmo.util.Distance`): The distance from the
                 object to stop. This is the distance between the origins. For instance,
                 the distance from the robot's origin (between Cozmo's two front wheels)
@@ -1967,6 +2039,9 @@ class Robot(event.Dispatcher):
         '''
         if not isinstance(target_object, objects.ObservableObject):
             raise TypeError("Target must be an observable object")
+
+        if isinstance(target_object, objects.CustomObject):
+            raise TypeError("CustomObject instances not supported by go_to_object")
 
         action = self.go_to_object_factory(object_id=target_object.object_id,
                                            distance_from_object=distance_from_object,
@@ -2074,23 +2149,32 @@ class Robot(event.Dispatcher):
                                                     num_retries=num_retries)
         return action
 
-    def turn_in_place(self, angle, in_parallel=False, num_retries=0):
+    def turn_in_place(self, angle, in_parallel=False, num_retries=0, speed=None,
+                      accel=None, angle_tolerance=None, is_absolute=False):
         '''Turn the robot around its current position.
 
         Args:
-            angle: (:class:`cozmo.util.Angle`): The angle to turn. Positive
+            angle (:class:`cozmo.util.Angle`): The angle to turn. Positive
                 values turn to the left, negative values to the right.
             in_parallel (bool): True to run this action in parallel with
                 previous actions, False to require that all previous actions
                 be already complete.
             num_retries (int): Number of times to retry the action if the
                 previous attempt(s) failed.
+            speed (:class:`cozmo.util.Angle`): Angular turn speed (per second).
+            accel (:class:`cozmo.util.Angle`): Acceleration of angular turn
+                (per second squared).
+            angle_tolerance (:class:`cozmo.util.Angle`): angular tolerance
+                to consider the action complete (this is clamped to a minimum
+                of 2 degrees internally).
+            is_absolute (bool): True to turn to a specific angle, False to
+                turn relative to the current pose.
         Returns:
             A :class:`cozmo.robot.TurnInPlace` action object which can be
                 queried to see when it is complete.
         '''
-        # TODO: add support for absolute vs relative positioning, speed & accel options
-        action = self.turn_in_place_factory(angle=angle,
+        action = self.turn_in_place_factory(angle=angle, speed=speed,
+                accel=accel, angle_tolerance=angle_tolerance, is_absolute=is_absolute,
                 conn=self.conn, robot=self, dispatch_parent=self)
         self._action_dispatcher._send_single_action(action,
                                                     in_parallel=in_parallel,
